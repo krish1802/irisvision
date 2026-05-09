@@ -1,0 +1,9 @@
+# Crawler + dashboard
+requests>=2.31
+pandas>=2.1
+streamlit>=1.32
+plotly>=5.20
+
+# Click bot (optional — only needed for bypass.py)
+playwright>=1.44
+seleniumbase>=4.27
