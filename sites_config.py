@@ -56,29 +56,55 @@ class Site:
 SITE = Site(
     domain="irisvision.ai",
     site_url="https://irisvision.ai",
-    brand_name="IrisVision",
+    brand_name="Iris",
     site_description=(
-        "IrisVision builds AI-powered low-vision wearable glasses that help "
-        "people with macular degeneration, glaucoma, and other visual "
-        "impairments see, read, and live independently."
+        "Iris is an autonomous AI agent platform that replaces 10+ tools "
+        "with one. From a single prompt it builds presentations, research "
+        "reports, websites, code, images, data dashboards, documents, and "
+        "more. Made in India, 100% sovereign."
     ),
     tracked_keywords=(
-        "low vision glasses",
-        "low vision aids",
-        "wearable low vision device",
-        "macular degeneration glasses",
-        "glaucoma vision aid",
-        "AI vision assistance",
-        "electronic glasses for the blind",
-        "assistive technology for low vision",
-        "vision rehabilitation device",
-        "smart glasses for visually impaired",
+        # Core product / category
+        "autonomous AI agent",
+        "AI agent platform",
+        "all-in-one AI tool",
+        "unified AI platform",
+        "AI productivity platform",
+        # Branded
+        "Iris AI",
+        "Iris Intelligence",
+        "irisvision.ai",
+        # Deliverables / use cases
+        "AI presentation generator",
+        "AI pitch deck generator",
+        "AI research agent",
+        "AI website builder",
+        "AI code generator",
+        "AI image generator",
+        "AI data analysis tool",
+        "AI document generator",
+        # Competitor / alternative intent
+        "ChatGPT alternative",
+        "Perplexity alternative",
+        "Gamma alternative",
+        "Canva alternative",
+        "Lovable alternative",
+        # Geo / positioning
+        "AI platform India",
+        "Made in India AI",
+        "sovereign AI platform",
     ),
     competitors=(
-        "esighteyewear.com",
-        "nueyes.com",
-        "orcam.com",
-        "envisionamerica.com",
+        "openai.com",
+        "anthropic.com",
+        "perplexity.ai",
+        "gamma.app",
+        "canva.com",
+        "lovable.dev",
+        "bolt.new",
+        "v0.dev",
+        "tome.app",
+        "beautiful.ai",
     ),
     # Either fill these in or set GA_PROPERTY_ID / GA_CREDENTIALS_JSON env vars.
     ga_property_id=None,            # e.g. "123456789"
