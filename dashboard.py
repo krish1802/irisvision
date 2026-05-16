@@ -2,45 +2,63 @@
 """
 SEO Dashboard for irisvision.ai.
 
+
 Reads the CSVs produced by:
   • crawl_script.py  → technical audit, page keywords, keyword clusters
   • bypass.py        → search-engine click-bot daily totals
 
-No WordPress, no Google Analytics, no API keys, no login.
+Plus a live Google Analytics 4 section (via ga_client.py).
+
 
 Run:
     streamlit run dashboard.py
 """
 
+
 from __future__ import annotations
+
 
 import csv
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+
 from sites_config import SITE
+from ga_client import (
+    ga_is_configured,
+    ga_daily_traffic,
+    ga_totals,
+    ga_top_pages,
+    default_range,
+)
+
 
 
 # ──────────────────────────────────────────────────────────────────────────
 # CONFIG
 # ──────────────────────────────────────────────────────────────────────────
 
+
 REPORTS_BASE = "seo_reports"
 os.makedirs(REPORTS_BASE, exist_ok=True)
 
 
+
 # ──────────────────────────────────────────────────────────────────────────
-# REPORT LOADERS
+# REPORT LOADERS  (unchanged from your version)
 # ──────────────────────────────────────────────────────────────────────────
+
 
 def _site_dir() -> str:
     return SITE.output_dir(REPORTS_BASE)
+
 
 
 def _find_csv(prefix_with_date: str) -> str | None:
@@ -50,6 +68,7 @@ def _find_csv(prefix_with_date: str) -> str | None:
         if os.path.exists(path):
             return path
     return None
+
 
 
 def get_report_dates() -> list[str]:
@@ -64,21 +83,26 @@ def get_report_dates() -> list[str]:
     return sorted(dates, reverse=True)
 
 
-def load_csv(prefix: str, date: str) -> pd.DataFrame | None:
-    path = _find_csv(f"{prefix}_{date}")
+
+def load_csv(prefix: str, date_str: str) -> pd.DataFrame | None:
+    path = _find_csv(f"{prefix}_{date_str}")
     return pd.read_csv(path) if path else None
 
 
-def load_audit(date: str) -> pd.DataFrame | None:
-    return load_csv(f"{SITE.domain}_technical_audit", date)
+
+def load_audit(date_str: str) -> pd.DataFrame | None:
+    return load_csv(f"{SITE.domain}_technical_audit", date_str)
 
 
-def load_keywords(date: str) -> pd.DataFrame | None:
-    return load_csv(f"{SITE.domain}_page_keywords", date)
+
+def load_keywords(date_str: str) -> pd.DataFrame | None:
+    return load_csv(f"{SITE.domain}_page_keywords", date_str)
 
 
-def load_clusters(date: str) -> pd.DataFrame | None:
-    return load_csv(f"{SITE.domain}_keyword_clusters", date)
+
+def load_clusters(date_str: str) -> pd.DataFrame | None:
+    return load_csv(f"{SITE.domain}_keyword_clusters", date_str)
+
 
 
 def _read_clickbot_csv(path: str) -> pd.DataFrame | None:
@@ -92,7 +116,6 @@ def _read_clickbot_csv(path: str) -> pd.DataFrame | None:
                 if len(raw) >= 5:
                     rows.append(raw[:5])
                 elif len(raw) == 4:
-                    # legacy: date, site, engine, clicks
                     rows.append([raw[0], "", raw[1], raw[2], raw[3]])
         if not rows:
             return None
@@ -103,10 +126,12 @@ def _read_clickbot_csv(path: str) -> pd.DataFrame | None:
         return None
 
 
+
 def load_clickbot_today() -> pd.DataFrame | None:
     today = datetime.today().strftime("%Y-%m-%d")
     path = _find_csv(f"traffic_generated_{today}")
     return _read_clickbot_csv(path) if path else None
+
 
 
 def load_clickbot_window(days: int = 7) -> pd.DataFrame | None:
@@ -128,9 +153,11 @@ def load_clickbot_window(days: int = 7) -> pd.DataFrame | None:
     return pd.concat(frames, ignore_index=True)
 
 
+
 # ──────────────────────────────────────────────────────────────────────────
-# SNAPSHOT HELPERS
+# SNAPSHOT HELPERS  (unchanged)
 # ──────────────────────────────────────────────────────────────────────────
+
 
 def compute_audit_snapshot(df: pd.DataFrame | None) -> dict | None:
     if df is None or len(df) == 0:
@@ -162,6 +189,7 @@ def compute_audit_snapshot(df: pd.DataFrame | None) -> dict | None:
     }
 
 
+
 def load_audit_history() -> pd.DataFrame:
     rows = []
     for d in get_report_dates():
@@ -172,9 +200,32 @@ def load_audit_history() -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values("date") if rows else pd.DataFrame()
 
 
+
+# ──────────────────────────────────────────────────────────────────────────
+# GA4 CACHED WRAPPERS — keyed on (start, end) so date-range changes refetch
+# ──────────────────────────────────────────────────────────────────────────
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _ga_daily(start: str, end: str) -> pd.DataFrame:
+    return ga_daily_traffic(start, end)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _ga_totals(start: str, end: str) -> dict:
+    return ga_totals(start, end)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _ga_top_pages(start: str, end: str, limit: int) -> pd.DataFrame:
+    return ga_top_pages(start, end, limit=limit)
+
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # UI
 # ──────────────────────────────────────────────────────────────────────────
+
 
 st.set_page_config(
     page_title=f"{SITE.brand_name} SEO Dashboard",
@@ -182,6 +233,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
 
 st.markdown("""
 <style>
@@ -196,7 +248,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
 # ─── Sidebar ───────────────────────────────────────────────────────────
+
 
 with st.sidebar:
     st.markdown(f"## 🔍 {SITE.brand_name}")
@@ -208,14 +262,29 @@ with st.sidebar:
     st.code("python bypass.py", language="bash")
     st.caption(f"Reports root: `{REPORTS_BASE}/{SITE.slug}/`")
 
+    st.divider()
+    st.markdown("### Google Analytics")
+    ga_ok, ga_reason = ga_is_configured()
+    if ga_ok:
+        st.success("GA4 connected")
+        if st.button("🔄 Clear GA cache"):
+            _ga_daily.clear(); _ga_totals.clear(); _ga_top_pages.clear()
+            st.toast("GA cache cleared")
+    else:
+        st.warning("GA4 not configured")
+        st.caption(ga_reason)
+
+
 
 # ─── Header ────────────────────────────────────────────────────────────
+
 
 st.markdown(
     f"# 📊 SEO Dashboard <span class='site-pill'>{SITE.brand_name}</span>",
     unsafe_allow_html=True,
 )
 st.markdown(f"**Site:** [`{SITE.domain}`]({SITE.site_url})")
+
 
 dates = get_report_dates()
 header_cols = st.columns([3, 1])
@@ -227,14 +296,17 @@ with header_cols[1]:
 if not dates:
     st.info(f"No reports yet. Run `python crawl_script.py` to populate `{REPORTS_BASE}/{SITE.slug}/`.")
 
-st.caption("Public-web SEO toolkit — no WordPress, no Analytics, no auth.")
+
+st.caption("Public-web SEO toolkit + live GA4 analytics.")
 st.divider()
+
 
 # Jump links
 st.markdown("""
 <div style="margin-bottom: 1rem; font-size: 0.95rem;">
 <strong>Jump to:</strong>
 <a href="#overview">🏠 Overview</a> &nbsp;·&nbsp;
+<a href="#analytics">📊 Analytics</a> &nbsp;·&nbsp;
 <a href="#growth">📈 Growth</a> &nbsp;·&nbsp;
 <a href="#audit">🔍 Audit</a> &nbsp;·&nbsp;
 <a href="#content">📝 Content</a> &nbsp;·&nbsp;
@@ -245,13 +317,17 @@ st.markdown("""
 st.divider()
 
 
+
 # ── 🏠 OVERVIEW ────────────────────────────────────────────────────────
+
 
 st.markdown('<div id="overview" class="seo-section-anchor"></div>', unsafe_allow_html=True)
 st.markdown("## 🏠 SEO Performance Overview")
 st.markdown(f"**{SITE.domain}** — Report for **{selected_date}**")
 
+
 audit_df = load_audit(selected_date) if dates else None
+
 
 if audit_df is not None:
     snap = compute_audit_snapshot(audit_df) or {}
@@ -299,13 +375,171 @@ if audit_df is not None:
 else:
     st.warning("No audit CSV loaded yet.")
 
+
 st.divider()
+
+
+
+# ── 📊 ANALYTICS (GA4) ────────────────────────────────────────────────
+
+
+st.markdown('<div id="analytics" class="seo-section-anchor"></div>', unsafe_allow_html=True)
+st.markdown("## 📊 Analytics (Google Analytics 4)")
+
+
+ga_ok, ga_reason = ga_is_configured()
+if not ga_ok:
+    st.warning(f"GA4 not configured — {ga_reason}")
+    st.markdown(
+        "Set the env vars **`GA_PROPERTY_ID`** and **`GA_CREDENTIALS_JSON`** "
+        "(or fill them in `sites_config.SITE`) and install the SDK:\n\n"
+        "```bash\npip install google-analytics-data\n```"
+    )
+else:
+    # Date range picker
+    default_start_str, default_end_str = default_range(28)
+    default_start = datetime.strptime(default_start_str, "%Y-%m-%d").date()
+    default_end = datetime.strptime(default_end_str, "%Y-%m-%d").date()
+
+    preset_col, range_col = st.columns([1, 3])
+    with preset_col:
+        preset = st.selectbox(
+            "Preset",
+            ["Last 7 days", "Last 28 days", "Last 90 days", "Year to date", "Custom"],
+            index=1,
+            key="ga_preset",
+        )
+    today = date.today()
+    if preset == "Last 7 days":
+        ds, de = today - timedelta(days=6), today
+    elif preset == "Last 28 days":
+        ds, de = today - timedelta(days=27), today
+    elif preset == "Last 90 days":
+        ds, de = today - timedelta(days=89), today
+    elif preset == "Year to date":
+        ds, de = date(today.year, 1, 1), today
+    else:
+        ds, de = default_start, default_end
+
+    with range_col:
+        picked = st.date_input(
+            "Date range",
+            value=(ds, de),
+            max_value=today,
+            key="ga_range",
+        )
+    if isinstance(picked, tuple) and len(picked) == 2:
+        ga_start, ga_end = picked
+    else:
+        ga_start, ga_end = ds, de
+
+    s_str, e_str = ga_start.strftime("%Y-%m-%d"), ga_end.strftime("%Y-%m-%d")
+
+    try:
+        with st.spinner(f"Fetching GA4 data {s_str} → {e_str}…"):
+            totals = _ga_totals(s_str, e_str)
+            daily = _ga_daily(s_str, e_str)
+            top_pages = _ga_top_pages(s_str, e_str, 25)
+    except Exception as exc:
+        st.error(f"GA4 query failed: {type(exc).__name__}: {exc}")
+        totals, daily, top_pages = None, None, None
+
+    if totals is not None:
+        # Compute previous-period deltas
+        span_days = (ga_end - ga_start).days + 1
+        prev_end = ga_start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=span_days - 1)
+        try:
+            prev_totals = _ga_totals(prev_start.strftime("%Y-%m-%d"), prev_end.strftime("%Y-%m-%d"))
+        except Exception:
+            prev_totals = None
+
+        def _delta(curr, prev):
+            if not prev:
+                return None
+            return curr - prev
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric(
+            "Sessions",
+            f"{totals['sessions']:,}",
+            delta=_delta(totals["sessions"], prev_totals["sessions"]) if prev_totals else None,
+        )
+        k2.metric(
+            "Users",
+            f"{totals['totalUsers']:,}",
+            delta=_delta(totals["totalUsers"], prev_totals["totalUsers"]) if prev_totals else None,
+        )
+        k3.metric(
+            "Pageviews",
+            f"{totals['screenPageViews']:,}",
+            delta=_delta(totals["screenPageViews"], prev_totals["screenPageViews"]) if prev_totals else None,
+        )
+        k4.metric(
+            "New Users",
+            f"{totals['newUsers']:,}",
+            delta=_delta(totals["newUsers"], prev_totals["newUsers"]) if prev_totals else None,
+        )
+        if prev_totals:
+            st.caption(
+                f"Compared with previous {span_days} days "
+                f"({prev_start:%Y-%m-%d} → {prev_end:%Y-%m-%d})."
+            )
+
+        st.markdown("### 📈 Daily traffic")
+        if daily is None or daily.empty:
+            st.info("No GA4 rows returned for this window.")
+        else:
+            metric_choice = st.multiselect(
+                "Metrics",
+                ["sessions", "totalUsers", "screenPageViews", "newUsers"],
+                default=["sessions", "totalUsers", "screenPageViews"],
+                key="ga_metric_pick",
+            )
+            if metric_choice:
+                long_df = daily.melt(
+                    id_vars="date", value_vars=metric_choice,
+                    var_name="metric", value_name="value",
+                )
+                fig = px.line(
+                    long_df, x="date", y="value", color="metric",
+                    markers=True, title=f"GA4 daily metrics — {s_str} to {e_str}",
+                )
+                fig.update_layout(xaxis_title="Date", yaxis_title="")
+                st.plotly_chart(fig, use_container_width=True, key="ga_daily_chart")
+            with st.expander("📅 Daily table"):
+                st.dataframe(daily, use_container_width=True, key="ga_daily_tbl")
+                st.download_button(
+                    "📥 Download daily CSV",
+                    daily.to_csv(index=False).encode(),
+                    f"ga_daily_{s_str}_to_{e_str}.csv",
+                    "text/csv",
+                    key="ga_daily_dl",
+                )
+
+        st.markdown("### 🏆 Top pages")
+        if top_pages is None or top_pages.empty:
+            st.info("No top-pages data for this window.")
+        else:
+            top_pages = top_pages.rename(columns={
+                "pagePath": "Path",
+                "screenPageViews": "Pageviews",
+                "sessions": "Sessions",
+                "totalUsers": "Users",
+            })
+            st.dataframe(top_pages, use_container_width=True, height=400, key="ga_top_tbl")
+
+
+st.divider()
+
 
 
 # ── 📈 GROWTH ──────────────────────────────────────────────────────────
 
+
 st.markdown('<div id="growth" class="seo-section-anchor"></div>', unsafe_allow_html=True)
 st.markdown("## 📈 Growth Tracker")
+
 
 all_dates = get_report_dates()
 if len(all_dates) < 2:
@@ -318,6 +552,7 @@ else:
     with col_b:
         older_options = [d for d in all_dates if d < date_new]
         date_old = st.selectbox("vs (older)", older_options, index=0, key="d_old") if older_options else None
+
 
     if date_old is None:
         st.warning("No older scan available.")
@@ -354,6 +589,7 @@ else:
                 ),
             )
 
+
         if not audit_hist.empty:
             fig = go.Figure()
             fig.add_trace(go.Scatter(
@@ -363,13 +599,17 @@ else:
             fig.update_layout(title="Health score over time", yaxis_title="Health %")
             st.plotly_chart(fig, use_container_width=True, key="growth_health")
 
+
 st.divider()
+
 
 
 # ── 🔍 AUDIT ───────────────────────────────────────────────────────────
 
+
 st.markdown('<div id="audit" class="seo-section-anchor"></div>', unsafe_allow_html=True)
 st.markdown("## 🔍 Technical SEO Audit")
+
 
 if audit_df is not None:
     c1, c2, c3 = st.columns(3)
@@ -384,6 +624,7 @@ if audit_df is not None:
             key="audit_statuses",
         )
 
+
     df_view = audit_df.copy()
     if filt == "With Issues":
         df_view = df_view[df_view["issues"].astype(str).str.len() > 0]
@@ -393,6 +634,7 @@ if audit_df is not None:
         df_view = df_view[df_view["status"].astype(str).isin(statuses)]
     if search:
         df_view = df_view[df_view["url"].str.contains(search, case=False, na=False)]
+
 
     st.markdown(f"**{len(df_view)} of {len(audit_df)} pages**")
     cols = [
@@ -412,13 +654,17 @@ if audit_df is not None:
 else:
     st.warning("No technical audit data found.")
 
+
 st.divider()
+
 
 
 # ── 📝 CONTENT ─────────────────────────────────────────────────────────
 
+
 st.markdown('<div id="content" class="seo-section-anchor"></div>', unsafe_allow_html=True)
 st.markdown("## 📝 Content Analysis")
+
 
 kw_df = load_keywords(selected_date) if dates else None
 if kw_df is not None and len(kw_df) > 0:
@@ -436,13 +682,17 @@ if kw_df is not None and len(kw_df) > 0:
 else:
     st.info("No content analysis data found.")
 
+
 st.divider()
+
 
 
 # ── 🔑 KEYWORDS ────────────────────────────────────────────────────────
 
+
 st.markdown('<div id="keywords" class="seo-section-anchor"></div>', unsafe_allow_html=True)
 st.markdown("## 🔑 Keyword Clusters")
+
 
 cl = load_clusters(selected_date) if dates else None
 if cl is not None and len(cl) > 0:
@@ -454,16 +704,21 @@ if cl is not None and len(cl) > 0:
 else:
     st.info("No keyword cluster data found.")
 
+
 st.markdown("### 🎯 Tracked Keywords")
 st.write(", ".join(SITE.tracked_keywords))
+
 
 st.divider()
 
 
+
 # ── 🤖 CLICK BOT ───────────────────────────────────────────────────────
+
 
 st.markdown('<div id="clickbot" class="seo-section-anchor"></div>', unsafe_allow_html=True)
 st.markdown("## 🤖 Click bot results")
+
 
 cf_today = load_clickbot_today()
 if cf_today is None or len(cf_today) == 0:
@@ -477,11 +732,13 @@ else:
     top_engine = by_engine.iloc[0]
     runs_today = cf_today["run_timestamp"].nunique() if "run_timestamp" in cf_today else 1
 
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total clicks today", f"{total_clicks:,}")
     c2.metric("Engines tested", f"{len(by_engine):,}")
     c3.metric("Top engine", f"{top_engine['engine']} ({top_engine['clicks']})")
     c4.metric("Runs today", runs_today)
+
 
     fig_cf = px.bar(
         by_engine, x="engine", y="clicks", text="clicks",
@@ -491,6 +748,7 @@ else:
     fig_cf.update_traces(textposition="outside")
     st.plotly_chart(fig_cf, use_container_width=True, key="overview_clickbot")
     st.dataframe(cf_today.reset_index(drop=True), use_container_width=True, height=250, key="cf_today_tbl")
+
 
 st.markdown("### 📅 Trend (last 14 days)")
 cf_window = load_clickbot_window(days=14)
