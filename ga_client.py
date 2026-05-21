@@ -64,17 +64,17 @@ except Exception as exc:  # pragma: no cover
 
 # Mapping: GA4_* env var → key inside the service-account JSON.
 _GA4_ENV_KEYS = {
-    "type": "type",
-    "project_id": "project_id",
-    "private_key_id": "private_key_id",
-    "private_key": "private_key",
-    "client_email": "client_email",
-    "client_id": "client_id",
-    "auth_uri": "auth_uri",
-    "token_uri": "token_uri",
-    "auth_provider_x509_cert_url": "auth_provider_x509_cert_url",
-    "client_x509_cert_url": "client_x509_cert_url",
-    "universe_domain": "universe_domain",
+    "GA4_TYPE": "type",
+    "GA4_PROJECT_ID": "project_id",
+    "GA4_PRIVATE_KEY_ID": "private_key_id",
+    "GA4_PRIVATE_KEY": "private_key",
+    "GA4_CLIENT_EMAIL": "client_email",
+    "GA4_CLIENT_ID": "client_id",
+    "GA4_AUTH_URI": "auth_uri",
+    "GA4_TOKEN_URI": "token_uri",
+    "GA4_AUTH_PROVIDER_X509_CERT_URL": "auth_provider_x509_cert_url",
+    "GA4_CLIENT_X509_CERT_URL": "client_x509_cert_url",
+    "GA4_UNIVERSE_DOMAIN": "universe_domain",
 }
 
 # These must be present to assemble a valid credential.
@@ -108,7 +108,12 @@ def _credentials_path() -> Optional[str]:
 
 def _info_from_ga4_env() -> Optional[dict]:
     """Build a service-account info dict from GA4_* env vars."""
-    if not all(os.environ.get(k, "").strip() for k in _REQUIRED_GA4_KEYS):
+    # Reverse map: json key -> env-var name, so we can look up the right env var
+    # for each required JSON key.
+    _JSON_TO_ENV = {v: k for k, v in _GA4_ENV_KEYS.items()}
+    if not all(
+        os.environ.get(_JSON_TO_ENV[k], "").strip() for k in _REQUIRED_GA4_KEYS
+    ):
         return None
 
     info: dict = {}
@@ -117,9 +122,12 @@ def _info_from_ga4_env() -> Optional[dict]:
         if val == "":
             continue
         if json_key == "private_key":
-            # .env stores the key as a single line with literal "\n" escapes.
-            # Convert them to real newlines so the PEM parser is happy.
+            # Normalize every shape the key can arrive in.
+            val = val.strip().strip('"').strip("'")
             val = val.replace("\\n", "\n")
+            val = val.replace("\r\n", "\n").replace("\r", "\n")
+            if not val.endswith("\n"):
+                val += "\n"
         info[json_key] = val
     return info
 
@@ -153,7 +161,12 @@ def ga_is_configured() -> tuple[bool, str]:
     if cred_path and os.path.exists(cred_path):
         return True, ""
 
-    missing = [k for k in _REQUIRED_GA4_KEYS if not os.environ.get(k, "").strip()]
+    _JSON_TO_ENV = {v: k for k, v in _GA4_ENV_KEYS.items()}
+    missing = [
+        _JSON_TO_ENV[k]
+        for k in _REQUIRED_GA4_KEYS
+        if not os.environ.get(_JSON_TO_ENV[k], "").strip()
+    ]
     return False, (
         "No GA4 credentials found. Set GA4_* env vars in .env "
         f"(missing: {', '.join(missing) or 'all'}), or set "
